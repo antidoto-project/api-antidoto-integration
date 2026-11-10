@@ -123,6 +123,13 @@ public class TratadorGlobalDeErros {
         return responder(HttpStatus.NOT_FOUND, ex.getMessage(), null, requisicao);
     }
 
+    /** Login errado: 401 com a mensagem genérica (o app mostra "E-mail ou senha incorretos"). */
+    @ExceptionHandler(CredenciaisInvalidasException.class)
+    public ResponseEntity<ErroResponse> credenciaisInvalidas(
+            CredenciaisInvalidasException ex, HttpServletRequest requisicao) {
+        return responder(HttpStatus.UNAUTHORIZED, ex.getMessage(), null, requisicao);
+    }
+
     @ExceptionHandler(ConflitoException.class)
     public ResponseEntity<ErroResponse> conflito(ConflitoException ex, HttpServletRequest requisicao) {
         return responder(HttpStatus.CONFLICT, ex.getMessage(), null, requisicao);

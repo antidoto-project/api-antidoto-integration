@@ -17,7 +17,7 @@ API REST que o app **Antídoto** consome (Global Solution 2026/2 · FIAP · Citi
 | Passo | O que entra                                                                                | Situação |
 | ----- | ------------------------------------------------------------------------------------------ | -------- |
 | 1     | Base: Spring Boot, banco com Flyway, entidades, formato de erro, paginação, Swagger, Docker | ✅       |
-| 2     | Login e cadastro (JWT), rotas protegidas, `/api/usuarios/me`, usuários de teste            | ⏳       |
+| 2     | Login e cadastro (JWT), rotas protegidas, `/api/usuarios/me`, usuários de teste            | ✅       |
 | 3     | Unidades próximas com soro compatível (RN-S) e 12 unidades fictícias                       | ⏳       |
 | 4     | CRUD de avistamentos (só o dono)                                                           | ⏳       |
 | 5     | Ocorrências: urgência (RN-U) e resumo de pré-atendimento em segundo plano                  | ⏳       |
@@ -28,7 +28,7 @@ API REST que o app **Antídoto** consome (Global Solution 2026/2 · FIAP · Citi
 
 ## 🛠️ Tecnologias
 
-Java 21 · Spring Boot 4 (Web MVC, Validation, Data JPA, Actuator) · Flyway · H2 (computador e testes) ·
+Java 21 · Spring Boot 4 (Web MVC, Validation, Data JPA, Security, Actuator) · JWT (JJWT) · Flyway · H2 (computador e testes) ·
 PostgreSQL (Render) · springdoc-openapi (Swagger) · JUnit 5 + MockMvc · Gradle (wrapper) · Docker.
 
 ---
@@ -46,7 +46,26 @@ Pré-requisito: **JDK 21**. O Gradle vem pelo wrapper; não precisa instalar.
 - Saúde: http://localhost:8080/actuator/health
 
 Sem nenhuma variável, a API usa o **H2 em memória** (os dados somem ao parar). O Flyway cria as
-tabelas na subida.
+tabelas na subida, e os usuários de teste são criados em seguida.
+
+### Usuários de teste (fictícios)
+
+| E-mail                   | Senha       | Perfil  |
+| ------------------------ | ----------- | ------- |
+| `cidadao@sospeconha.dev` | `Teste@123` | CIDADAO |
+| `gestor@sospeconha.dev`  | `Teste@123` | GESTOR  |
+
+Os mesmos do MVP-01, para o app funcionar igual com esta API e com a do grupo. No Swagger, faça o
+login, copie o `token` e cole em **Authorize**.
+
+### Rotas prontas
+
+| Rota                         | Acesso  | O que faz                                    |
+| ---------------------------- | ------- | -------------------------------------------- |
+| `POST /api/auth/cadastro`    | público | Cria um CIDADAO e já devolve o token (201)   |
+| `POST /api/auth/login`       | público | Login (200); errado: 401 "E-mail ou senha incorretos" |
+| `GET /api/usuarios/me`       | logado  | Dados de quem está logado                    |
+| `PUT /api/usuarios/me`       | logado  | Muda só o nome e o telefone                  |
 
 **App no celular apontando para esta API:** no `.env` do app,
 `EXPO_PUBLIC_API_URL=http://<ip do computador>:8080` (o mesmo Wi-Fi), e `npx expo start --clear`.
@@ -74,6 +93,9 @@ Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
 | ---------------------------------- | --------------------------------------------------------- |
 | `PORT`                             | Porta (o Render define sozinho). Padrão: 8080             |
 | `DB_URL`, `DB_USUARIO`, `DB_SENHA` | Postgres do Render. Sem `DB_URL`, H2 em memória            |
+| `JWT_SECRET`                       | Segredo do JWT em base64, 32+ bytes (`openssl rand -base64 32`). Sem ele, um aleatório por subida: o login cai quando a API reinicia |
+| `CORS_ORIGENS`                     | Origens do navegador, separadas por vírgula. Padrão: `http://localhost:8081` (Expo Web). O app no celular não usa CORS |
+| `CARREGAR_DADOS_INICIAIS`          | `false` desliga os usuários de teste. Padrão: `true`       |
 
 ---
 
@@ -81,14 +103,14 @@ Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
 
 ```
 src/main/java/br/com/fiap/antidoto/
-├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger)
+├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), DadosIniciais (usuários de teste)
 ├── controller/   recebe, valida (@Valid) e chama o service
 ├── dto/          records de request e response, com os nomes do contrato; PaginaResponse; erro/
 ├── exception/    TratadorGlobalDeErros (formato de erro do contrato) e as exceções da API
 ├── mapper/       entidade → DTO
 ├── model/        entidades JPA e enums
 ├── repository/   Spring Data JPA
-├── security/     JWT e Spring Security (Passo 2)
+├── security/     SecurityConfig (rotas públicas e protegidas, CORS), JwtService, JwtFiltro, RespostasDeSeguranca (401/403)
 └── service/      regras de negócio
 src/main/resources/
 ├── application.properties

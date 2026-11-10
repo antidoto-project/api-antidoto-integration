@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,7 +39,11 @@ class AntidotoApiApplicationTests {
 
     @Test
     void rotaInexistenteRespondeNoFormatoDoContrato() throws Exception {
+        // Sem login, toda rota fora das públicas responde 401 antes de saber se existe
         mvc.perform(get("/api/nao-existe"))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(get("/api/nao-existe").header(HttpHeaders.AUTHORIZATION, ApoioDeTeste.cadastrarEEntrar(mvc)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.erro").value("Não encontrado"))
