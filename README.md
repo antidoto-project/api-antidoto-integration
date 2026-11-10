@@ -18,7 +18,7 @@ API REST que o app **Antídoto** consome (Global Solution 2026/2 · FIAP · Citi
 | ----- | ------------------------------------------------------------------------------------------ | -------- |
 | 1     | Base: Spring Boot, banco com Flyway, entidades, formato de erro, paginação, Swagger, Docker | ✅       |
 | 2     | Login e cadastro (JWT), rotas protegidas, `/api/usuarios/me`, usuários de teste            | ✅       |
-| 3     | Unidades próximas com soro compatível (RN-S) e 12 unidades fictícias                       | ⏳       |
+| 3     | Unidades próximas com soro compatível (RN-S) e 12 unidades fictícias                       | ✅       |
 | 4     | CRUD de avistamentos (só o dono)                                                           | ⏳       |
 | 5     | Ocorrências: urgência (RN-U) e resumo de pré-atendimento em segundo plano                  | ⏳       |
 | 6     | Deploy no Render (Postgres) e o app apontando para a API                                   | ⏳       |
@@ -58,6 +58,15 @@ tabelas na subida, e os usuários de teste são criados em seguida.
 Os mesmos do MVP-01, para o app funcionar igual com esta API e com a do grupo. No Swagger, faça o
 login, copie o `token` e cole em **Authorize**.
 
+### Unidades de saúde (fictícias)
+
+São 12, espalhadas por São Paulo (Sé, Paulista, Consolação, Pinheiros, Butantã, Lapa, Santana,
+Tatuapé, Vila Mariana, Ipiranga, Jabaquara e Santo Amaro), com combinações de soros que cobrem
+todas as linhas da RN-S: uma UPA sem soro, duas UBS (que não entram na abelha) e três hospitais que
+atendem o "Não sei" (ANTIBOTRÓPICO + ESCORPIÔNICO ou ARACNÍDICO). Nomes, endereços e telefones são
+inventados ("Hospital Exemplo Centro", "Rua Exemplo, 100"). Para testar perto delas no emulador,
+use a localização da Avenida Paulista (-23.5614, -46.6559).
+
 ### Rotas prontas
 
 | Rota                         | Acesso  | O que faz                                    |
@@ -66,6 +75,9 @@ login, copie o `token` e cole em **Authorize**.
 | `POST /api/auth/login`       | público | Login (200); errado: 401 "E-mail ou senha incorretos" |
 | `GET /api/usuarios/me`       | logado  | Dados de quem está logado                    |
 | `PUT /api/usuarios/me`       | logado  | Muda só o nome e o telefone                  |
+| `GET /api/unidades/proximas` | público | Unidades ativas com soro compatível com o animal (RN-S), da mais perto para a mais longe (`latitude`, `longitude`, `tipoAnimal`, `limite` de 1 a 10, padrão 5) |
+| `GET /api/unidades`          | público | Unidades ativas por nome, paginadas          |
+| `GET /api/unidades/{id}`     | público | Detalhe de uma unidade ativa                 |
 
 **App no celular apontando para esta API:** no `.env` do app,
 `EXPO_PUBLIC_API_URL=http://<ip do computador>:8080` (o mesmo Wi-Fi), e `npx expo start --clear`.
@@ -103,7 +115,7 @@ Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
 
 ```
 src/main/java/br/com/fiap/antidoto/
-├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), DadosIniciais (usuários de teste)
+├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), DadosIniciais (usuários e unidades de teste)
 ├── controller/   recebe, valida (@Valid) e chama o service
 ├── dto/          records de request e response, com os nomes do contrato; PaginaResponse; erro/
 ├── exception/    TratadorGlobalDeErros (formato de erro do contrato) e as exceções da API
@@ -111,7 +123,7 @@ src/main/java/br/com/fiap/antidoto/
 ├── model/        entidades JPA e enums
 ├── repository/   Spring Data JPA
 ├── security/     SecurityConfig (rotas públicas e protegidas, CORS), JwtService, JwtFiltro, RespostasDeSeguranca (401/403)
-└── service/      regras de negócio
+└── service/      regras de negócio (AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService, DistanciaService)
 src/main/resources/
 ├── application.properties
 └── db/migration/ V1__criar_tabelas.sql (Flyway, SQL do PostgreSQL)
@@ -133,7 +145,7 @@ não enxerga:
 | Oracle em produção                     | PostgreSQL no Render (o Render não tem Oracle); o SQL do Flyway é de Postgres  |
 | RabbitMQ para o resumo                 | Resumo em segundo plano dentro da API (`@Async`), o modo sem fila do MVP-01    |
 | `br.com.sospeconha.api`, "SOS Peçonha" | `br.com.fiap.antidoto`, "Antídoto" (o nome do app)                             |
-| CRUD de unidades do GESTOR             | Fora: o app não usa                                                            |
+| CRUD de unidades do GESTOR             | Fora: o app não usa. As leituras públicas (`GET /api/unidades` e `/{id}`) existem |
 
 ---
 
