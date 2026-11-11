@@ -21,7 +21,7 @@ API REST que o app **Antídoto** consome (Global Solution 2026/2 · FIAP · Citi
 | 3     | Unidades próximas com soro compatível (RN-S) e 12 unidades fictícias                       | ✅       |
 | 4     | CRUD de avistamentos (só o dono)                                                           | ✅       |
 | 5     | Ocorrências: urgência (RN-U) e resumo de pré-atendimento em segundo plano                  | ✅       |
-| 6     | Deploy no Render (Postgres) e o app apontando para a API                                   | ⏳       |
+| 6     | Deploy no Render (Postgres) e o app apontando para a API                                   | 🔜 arquivos prontos; falta criar no Render |
 | 7     | (Opcional) Resumo com IA de verdade (Spring AI + Groq)                                     | ⏳       |
 
 ---
@@ -123,6 +123,49 @@ docker run -p 8080:8080 antidoto-api
 
 ---
 
+## ☁️ Deploy no Render
+
+O [`render.yaml`](render.yaml) é um **Blueprint**: cria de uma vez o Postgres grátis e a API (Docker),
+na mesma região, ligados pela rede interna.
+
+1. Suba este repositório no GitHub (pode ser privado).
+2. No [Render](https://dashboard.render.com): **New → Blueprint** → conecte o GitHub e escolha o
+   repositório → **Apply**.
+3. Espere o primeiro deploy: o build com o Gradle leva alguns minutos, e a subida, 1 a 2 minutos no
+   plano grátis. Fica pronto quando `https://<sua-api>.onrender.com/actuator/health` responder
+   `{"status":"UP"}`.
+4. Copie a URL do serviço (algo como `https://antidoto-api.onrender.com`; se o nome já existir, o
+   Render acrescenta um sufixo).
+
+O Render gera o `JWT_SECRET` sozinho e entrega o banco em `DATABASE_URL`
+(`postgresql://usuario:senha@host/banco`); a API converte para JDBC na subida (`BancoDoRender`).
+Cada push na branch do serviço faz um deploy novo.
+
+### Para a API não dormir
+
+No plano grátis, a API dorme depois de 15 minutos sem receber requisições e leva cerca de 1 minuto
+para acordar, mas o app desiste em 10 segundos ("Sem conexão"). Crie um monitor grátis no
+[UptimeRobot](https://uptimerobot.com) (tipo HTTP(s), URL `https://<sua-api>.onrender.com/actuator/health`,
+a cada 5 minutos): ele mantém a API acordada.
+
+As 750 horas grátis por mês são da conta inteira do Render. Um serviço acordado o mês todo usa cerca
+de 744 h: se outro serviço grátis da mesma conta também ficar acordado, as horas acabam e o Render
+suspende os serviços grátis até o mês seguinte.
+
+### Limites do plano grátis
+
+- **Postgres:** 1 por conta, 1 GB, e **expira 30 dias depois de criado** (mais 14 dias para fazer
+  upgrade antes de ser apagado). Se a conta já tiver um Postgres grátis, o Blueprint falha.
+- **API:** 512 MB e 0,1 de CPU. O Dockerfile já ajusta a JVM (heap em 60%, coletor simples, JIT leve):
+  aqui ela ficou em ~280 MB.
+
+### App apontando para a nuvem
+
+No `.env` do app: `EXPO_PUBLIC_API_URL=https://<sua-api>.onrender.com` e `npx expo start --clear`.
+Login de teste: `cidadao@sospeconha.dev` / `Teste@123`.
+
+---
+
 ## ⚙️ Variáveis de ambiente
 
 Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
@@ -130,7 +173,8 @@ Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
 | Variável                           | Para quê                                                  |
 | ---------------------------------- | --------------------------------------------------------- |
 | `PORT`                             | Porta (o Render define sozinho). Padrão: 8080             |
-| `DB_URL`, `DB_USUARIO`, `DB_SENHA` | Postgres do Render. Sem `DB_URL`, H2 em memória            |
+| `DATABASE_URL`                     | Postgres no formato `postgresql://usuario:senha@host/banco` (o Render preenche pelo `render.yaml`). Sem ele e sem `DB_URL`, H2 em memória |
+| `DB_URL`, `DB_USUARIO`, `DB_SENHA` | Postgres configurado à mão (JDBC). Tem prioridade sobre o `DATABASE_URL` |
 | `JWT_SECRET`                       | Segredo do JWT em base64, 32+ bytes (`openssl rand -base64 32`). Sem ele, um aleatório por subida: o login cai quando a API reinicia |
 | `CORS_ORIGENS`                     | Origens do navegador, separadas por vírgula. Padrão: `http://localhost:8081` (Expo Web). O app no celular não usa CORS |
 | `CARREGAR_DADOS_INICIAIS`          | `false` desliga os usuários de teste. Padrão: `true`       |
@@ -141,7 +185,7 @@ Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
 
 ```
 src/main/java/br/com/fiap/antidoto/
-├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), AssincronoConfig (@Async), DadosIniciais (usuários, unidades e exemplos de teste)
+├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), AssincronoConfig (@Async), DadosIniciais (usuários, unidades e exemplos de teste), BancoDoRender (DATABASE_URL → JDBC)
 ├── controller/   recebe, valida (@Valid) e chama o service
 ├── dto/          records de request e response, com os nomes do contrato; PaginaResponse; erro/
 ├── exception/    TratadorGlobalDeErros (formato de erro do contrato) e as exceções da API
@@ -156,6 +200,8 @@ src/main/resources/
 ├── application.properties
 └── db/migration/ V1__criar_tabelas.sql (Flyway, SQL do PostgreSQL)
 docs/             pacote do MVP (MVP-00, MVP-01) e o contrato
+render.yaml       Blueprint do Render (Postgres grátis + API)
+Dockerfile        imagem da API (build com o Gradle, roda só com a JRE)
 ```
 
 As convenções estão no [`CLAUDE.md`](CLAUDE.md).

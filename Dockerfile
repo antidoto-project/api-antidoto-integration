@@ -31,5 +31,6 @@ USER antidoto
 
 EXPOSE 8080
 
-# O plano grátis do Render tem 512 MB: a JVM usa até 75% disso
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]
+# O plano grátis do Render tem 512 MB e 0,1 de CPU: heap em até 60% da memória,
+# coletor de lixo simples e JIT mais leve (sobe mais rápido e gasta menos memória)
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60", "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-Xss512k", "-jar", "app.jar"]
