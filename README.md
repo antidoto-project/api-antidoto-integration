@@ -19,7 +19,7 @@ API REST que o app **Antídoto** consome (Global Solution 2026/2 · FIAP · Citi
 | 1     | Base: Spring Boot, banco com Flyway, entidades, formato de erro, paginação, Swagger, Docker | ✅       |
 | 2     | Login e cadastro (JWT), rotas protegidas, `/api/usuarios/me`, usuários de teste            | ✅       |
 | 3     | Unidades próximas com soro compatível (RN-S) e 12 unidades fictícias                       | ✅       |
-| 4     | CRUD de avistamentos (só o dono)                                                           | ⏳       |
+| 4     | CRUD de avistamentos (só o dono)                                                           | ✅       |
 | 5     | Ocorrências: urgência (RN-U) e resumo de pré-atendimento em segundo plano                  | ⏳       |
 | 6     | Deploy no Render (Postgres) e o app apontando para a API                                   | ⏳       |
 | 7     | (Opcional) Resumo com IA de verdade (Spring AI + Groq)                                     | ⏳       |
@@ -52,7 +52,7 @@ tabelas na subida, e os usuários de teste são criados em seguida.
 
 | E-mail                   | Senha       | Perfil  |
 | ------------------------ | ----------- | ------- |
-| `cidadao@sospeconha.dev` | `Teste@123` | CIDADAO |
+| `cidadao@sospeconha.dev` | `Teste@123` | CIDADAO (com 3 avistamentos de exemplo perto da Paulista) |
 | `gestor@sospeconha.dev`  | `Teste@123` | GESTOR  |
 
 Os mesmos do MVP-01, para o app funcionar igual com esta API e com a do grupo. No Swagger, faça o
@@ -78,6 +78,11 @@ use a localização da Avenida Paulista (-23.5614, -46.6559).
 | `GET /api/unidades/proximas` | público | Unidades ativas com soro compatível com o animal (RN-S), da mais perto para a mais longe (`latitude`, `longitude`, `tipoAnimal`, `limite` de 1 a 10, padrão 5) |
 | `GET /api/unidades`          | público | Unidades ativas por nome, paginadas          |
 | `GET /api/unidades/{id}`     | público | Detalhe de uma unidade ativa                 |
+| `POST /api/avistamentos`     | logado  | Registra um avistamento (201); `dataHora` sem futuro (tolerância de 5 min) |
+| `GET /api/avistamentos/meus` | logado  | Os do usuário, mais recentes primeiro, paginados (`tamanho` até 50) |
+| `GET /api/avistamentos/{id}` | logado  | Detalhe; de outro usuário, 404 (RN-G5)       |
+| `PUT /api/avistamentos/{id}` | logado  | Edita; atualiza o `atualizadoEm`             |
+| `DELETE /api/avistamentos/{id}` | logado | Exclui (204)                                |
 
 **App no celular apontando para esta API:** no `.env` do app,
 `EXPO_PUBLIC_API_URL=http://<ip do computador>:8080` (o mesmo Wi-Fi), e `npx expo start --clear`.
@@ -115,7 +120,7 @@ Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
 
 ```
 src/main/java/br/com/fiap/antidoto/
-├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), DadosIniciais (usuários e unidades de teste)
+├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), DadosIniciais (usuários, unidades e avistamentos de teste)
 ├── controller/   recebe, valida (@Valid) e chama o service
 ├── dto/          records de request e response, com os nomes do contrato; PaginaResponse; erro/
 ├── exception/    TratadorGlobalDeErros (formato de erro do contrato) e as exceções da API
@@ -123,7 +128,7 @@ src/main/java/br/com/fiap/antidoto/
 ├── model/        entidades JPA e enums
 ├── repository/   Spring Data JPA
 ├── security/     SecurityConfig (rotas públicas e protegidas, CORS), JwtService, JwtFiltro, RespostasDeSeguranca (401/403)
-└── service/      regras de negócio (AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService, DistanciaService)
+└── service/      regras de negócio (AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService, DistanciaService, AvistamentoService)
 src/main/resources/
 ├── application.properties
 └── db/migration/ V1__criar_tabelas.sql (Flyway, SQL do PostgreSQL)

@@ -1,10 +1,14 @@
 package br.com.fiap.antidoto.config;
 
+import br.com.fiap.antidoto.model.Avistamento;
+import br.com.fiap.antidoto.model.LocalAvistamento;
 import br.com.fiap.antidoto.model.Perfil;
+import br.com.fiap.antidoto.model.TipoAnimal;
 import br.com.fiap.antidoto.model.TipoSoro;
 import br.com.fiap.antidoto.model.TipoUnidade;
 import br.com.fiap.antidoto.model.UnidadeSaude;
 import br.com.fiap.antidoto.model.Usuario;
+import br.com.fiap.antidoto.repository.AvistamentoRepository;
 import br.com.fiap.antidoto.repository.UnidadeSaudeRepository;
 import br.com.fiap.antidoto.repository.UsuarioRepository;
 import org.slf4j.Logger;
@@ -16,6 +20,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
@@ -27,7 +32,7 @@ import static br.com.fiap.antidoto.model.TipoUnidade.*;
 
 /**
  * Dados de teste (MVP-01 §10), criados na subida só se ainda não existirem: os
- * usuários e as unidades de saúde (fictícias).
+ * usuários, as unidades de saúde (fictícias) e os 3 avistamentos de exemplo do cidadão.
  * Os mesmos usuários do Java do grupo, para o app e o vídeo funcionarem com os dois.
  * Desligue com CARREGAR_DADOS_INICIAIS=false.
  */
@@ -88,9 +93,25 @@ public class DadosIniciais implements ApplicationRunner {
                     EnumSet.of(ANTILOXOSCELICO, ANTILONOMICO))
     );
 
+    private record AvistamentoDeExemplo(
+            TipoAnimal tipoAnimal, LocalAvistamento local, double latitude, double longitude,
+            Duration ha, String observacao) {
+    }
+
+    /** Perto da Avenida Paulista, onde o app costuma ser testado. */
+    private static final List<AvistamentoDeExemplo> AVISTAMENTOS = List.of(
+            new AvistamentoDeExemplo(TipoAnimal.ESCORPIAO, LocalAvistamento.CASA, -23.5640, -46.6520,
+                    Duration.ofDays(2), "Vi perto do ralo do banheiro"),
+            new AvistamentoDeExemplo(TipoAnimal.ARANHA, LocalAvistamento.QUINTAL, -23.5700, -46.6450,
+                    Duration.ofDays(5), "Atrás dos tijolos encostados no muro"),
+            new AvistamentoDeExemplo(TipoAnimal.SERPENTE, LocalAvistamento.VIA_PUBLICA, -23.5850, -46.6600,
+                    Duration.ofDays(10), null)
+    );
+
     private final boolean carregar;
     private final UsuarioRepository usuarioRepository;
     private final UnidadeSaudeRepository unidadeRepository;
+    private final AvistamentoRepository avistamentoRepository;
     private final PasswordEncoder codificadorDeSenha;
     private final Clock relogio;
 
@@ -98,12 +119,14 @@ public class DadosIniciais implements ApplicationRunner {
             @Value("${antidoto.dados-iniciais}") boolean carregar,
             UsuarioRepository usuarioRepository,
             UnidadeSaudeRepository unidadeRepository,
+            AvistamentoRepository avistamentoRepository,
             PasswordEncoder codificadorDeSenha,
             Clock relogio
     ) {
         this.carregar = carregar;
         this.usuarioRepository = usuarioRepository;
         this.unidadeRepository = unidadeRepository;
+        this.avistamentoRepository = avistamentoRepository;
         this.codificadorDeSenha = codificadorDeSenha;
         this.relogio = relogio;
     }
@@ -116,7 +139,9 @@ public class DadosIniciais implements ApplicationRunner {
         criarUsuarioSeNaoExistir("cidadao@sospeconha.dev", "Ana Souza", "11999990000", Perfil.CIDADAO);
         criarUsuarioSeNaoExistir("gestor@sospeconha.dev", "Gestor de Teste", null, Perfil.GESTOR);
         UNIDADES.forEach(this::criarUnidadeSeNaoExistir);
-        log.info("Dados iniciais conferidos (usuários de teste e {} unidades fictícias)", UNIDADES.size());
+        usuarioRepository.findByEmail("cidadao@sospeconha.dev").ifPresent(this::criarAvistamentosSeNaoTiver);
+        log.info("Dados iniciais conferidos (usuários de teste, {} unidades fictícias e avistamentos de exemplo)",
+                UNIDADES.size());
     }
 
     private void criarUsuarioSeNaoExistir(String email, String nome, String telefone, Perfil perfil) {
@@ -151,5 +176,24 @@ public class DadosIniciais implements ApplicationRunner {
         unidade.setSoros(soros);
         unidade.setAtualizadoEm(Instant.now(relogio).truncatedTo(ChronoUnit.MILLIS));
         unidadeRepository.save(unidade);
+    }
+
+    private void criarAvistamentosSeNaoTiver(Usuario cidadao) {
+        if (avistamentoRepository.existsByUsuarioId(cidadao.getId())) {
+            return;
+        }
+        Instant agora = Instant.now(relogio).truncatedTo(ChronoUnit.MILLIS);
+        for (AvistamentoDeExemplo exemplo : AVISTAMENTOS) {
+            Avistamento avistamento = new Avistamento();
+            avistamento.setUsuario(cidadao);
+            avistamento.setTipoAnimal(exemplo.tipoAnimal());
+            avistamento.setLocal(exemplo.local());
+            avistamento.setLatitude(exemplo.latitude());
+            avistamento.setLongitude(exemplo.longitude());
+            avistamento.setDataHora(agora.minus(exemplo.ha()));
+            avistamento.setObservacao(exemplo.observacao());
+            avistamento.setCriadoEm(agora.minus(exemplo.ha()).plus(Duration.ofMinutes(2)));
+            avistamentoRepository.save(avistamento);
+        }
     }
 }
