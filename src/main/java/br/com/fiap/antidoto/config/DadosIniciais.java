@@ -1,6 +1,13 @@
 package br.com.fiap.antidoto.config;
 
+import br.com.fiap.antidoto.dto.ocorrencia.ResultadoUrgencia;
+import br.com.fiap.antidoto.ia.ResumoModeloPadrao;
+import br.com.fiap.antidoto.mapper.OcorrenciaMapper;
 import br.com.fiap.antidoto.model.Avistamento;
+import br.com.fiap.antidoto.model.FaixaEtaria;
+import br.com.fiap.antidoto.model.Ocorrencia;
+import br.com.fiap.antidoto.model.Sintoma;
+import br.com.fiap.antidoto.model.StatusResumo;
 import br.com.fiap.antidoto.model.LocalAvistamento;
 import br.com.fiap.antidoto.model.Perfil;
 import br.com.fiap.antidoto.model.TipoAnimal;
@@ -9,8 +16,10 @@ import br.com.fiap.antidoto.model.TipoUnidade;
 import br.com.fiap.antidoto.model.UnidadeSaude;
 import br.com.fiap.antidoto.model.Usuario;
 import br.com.fiap.antidoto.repository.AvistamentoRepository;
+import br.com.fiap.antidoto.repository.OcorrenciaRepository;
 import br.com.fiap.antidoto.repository.UnidadeSaudeRepository;
 import br.com.fiap.antidoto.repository.UsuarioRepository;
+import br.com.fiap.antidoto.service.UrgenciaService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -32,7 +41,8 @@ import static br.com.fiap.antidoto.model.TipoUnidade.*;
 
 /**
  * Dados de teste (MVP-01 §10), criados na subida só se ainda não existirem: os
- * usuários, as unidades de saúde (fictícias) e os 3 avistamentos de exemplo do cidadão.
+ * usuários, as unidades de saúde (fictícias), os 3 avistamentos e a ocorrência de
+ * exemplo do cidadão.
  * Os mesmos usuários do Java do grupo, para o app e o vídeo funcionarem com os dois.
  * Desligue com CARREGAR_DADOS_INICIAIS=false.
  */
@@ -112,6 +122,9 @@ public class DadosIniciais implements ApplicationRunner {
     private final UsuarioRepository usuarioRepository;
     private final UnidadeSaudeRepository unidadeRepository;
     private final AvistamentoRepository avistamentoRepository;
+    private final OcorrenciaRepository ocorrenciaRepository;
+    private final UrgenciaService urgenciaService;
+    private final ResumoModeloPadrao resumoModeloPadrao;
     private final PasswordEncoder codificadorDeSenha;
     private final Clock relogio;
 
@@ -120,6 +133,9 @@ public class DadosIniciais implements ApplicationRunner {
             UsuarioRepository usuarioRepository,
             UnidadeSaudeRepository unidadeRepository,
             AvistamentoRepository avistamentoRepository,
+            OcorrenciaRepository ocorrenciaRepository,
+            UrgenciaService urgenciaService,
+            ResumoModeloPadrao resumoModeloPadrao,
             PasswordEncoder codificadorDeSenha,
             Clock relogio
     ) {
@@ -127,6 +143,9 @@ public class DadosIniciais implements ApplicationRunner {
         this.usuarioRepository = usuarioRepository;
         this.unidadeRepository = unidadeRepository;
         this.avistamentoRepository = avistamentoRepository;
+        this.ocorrenciaRepository = ocorrenciaRepository;
+        this.urgenciaService = urgenciaService;
+        this.resumoModeloPadrao = resumoModeloPadrao;
         this.codificadorDeSenha = codificadorDeSenha;
         this.relogio = relogio;
     }
@@ -139,8 +158,11 @@ public class DadosIniciais implements ApplicationRunner {
         criarUsuarioSeNaoExistir("cidadao@sospeconha.dev", "Ana Souza", "11999990000", Perfil.CIDADAO);
         criarUsuarioSeNaoExistir("gestor@sospeconha.dev", "Gestor de Teste", null, Perfil.GESTOR);
         UNIDADES.forEach(this::criarUnidadeSeNaoExistir);
-        usuarioRepository.findByEmail("cidadao@sospeconha.dev").ifPresent(this::criarAvistamentosSeNaoTiver);
-        log.info("Dados iniciais conferidos (usuários de teste, {} unidades fictícias e avistamentos de exemplo)",
+        usuarioRepository.findByEmail("cidadao@sospeconha.dev").ifPresent(cidadao -> {
+            criarAvistamentosSeNaoTiver(cidadao);
+            criarOcorrenciaSeNaoTiver(cidadao);
+        });
+        log.info("Dados iniciais conferidos (usuários de teste, {} unidades fictícias e os exemplos do cidadão)",
                 UNIDADES.size());
     }
 
@@ -195,5 +217,36 @@ public class DadosIniciais implements ApplicationRunner {
             avistamento.setCriadoEm(agora.minus(exemplo.ha()).plus(Duration.ofMinutes(2)));
             avistamentoRepository.save(avistamento);
         }
+    }
+
+    /**
+     * Uma ocorrência de ontem, já com o resumo pronto (modelo padrão), para o
+     * histórico do app não começar vazio. A urgência sai da mesma RN-U da API.
+     */
+    private void criarOcorrenciaSeNaoTiver(Usuario cidadao) {
+        if (ocorrenciaRepository.existsByUsuarioId(cidadao.getId())) {
+            return;
+        }
+        Instant registro = Instant.now(relogio).truncatedTo(ChronoUnit.MILLIS).minus(Duration.ofDays(1));
+        Instant horaPicada = registro.minus(Duration.ofMinutes(20));
+        Set<Sintoma> sintomas = EnumSet.of(Sintoma.DOR_LOCAL, Sintoma.INCHACO_LOCAL);
+        ResultadoUrgencia resultado = urgenciaService.calcular(
+                TipoAnimal.ESCORPIAO, FaixaEtaria.ADULTO, sintomas, horaPicada, registro);
+
+        Ocorrencia ocorrencia = new Ocorrencia();
+        ocorrencia.setUsuario(cidadao);
+        unidadeRepository.findByNome("Hospital Exemplo Paulista").ifPresent(ocorrencia::setUnidade);
+        ocorrencia.setTipoAnimal(TipoAnimal.ESCORPIAO);
+        ocorrencia.setFaixaEtaria(FaixaEtaria.ADULTO);
+        ocorrencia.setSintomas(sintomas);
+        ocorrencia.setHoraPicada(horaPicada);
+        ocorrencia.setLatitude(-23.5640);
+        ocorrencia.setLongitude(-46.6520);
+        ocorrencia.setUrgencia(resultado.urgencia());
+        ocorrencia.setMotivos(OcorrenciaMapper.motivosParaColuna(resultado.motivos()));
+        ocorrencia.setCriadoEm(registro);
+        ocorrencia.setResumo(resumoModeloPadrao.montar(ocorrencia, registro));
+        ocorrencia.setStatusResumo(StatusResumo.MODELO_PADRAO);
+        ocorrenciaRepository.save(ocorrencia);
     }
 }

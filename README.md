@@ -20,7 +20,7 @@ API REST que o app **Antídoto** consome (Global Solution 2026/2 · FIAP · Citi
 | 2     | Login e cadastro (JWT), rotas protegidas, `/api/usuarios/me`, usuários de teste            | ✅       |
 | 3     | Unidades próximas com soro compatível (RN-S) e 12 unidades fictícias                       | ✅       |
 | 4     | CRUD de avistamentos (só o dono)                                                           | ✅       |
-| 5     | Ocorrências: urgência (RN-U) e resumo de pré-atendimento em segundo plano                  | ⏳       |
+| 5     | Ocorrências: urgência (RN-U) e resumo de pré-atendimento em segundo plano                  | ✅       |
 | 6     | Deploy no Render (Postgres) e o app apontando para a API                                   | ⏳       |
 | 7     | (Opcional) Resumo com IA de verdade (Spring AI + Groq)                                     | ⏳       |
 
@@ -52,11 +52,28 @@ tabelas na subida, e os usuários de teste são criados em seguida.
 
 | E-mail                   | Senha       | Perfil  |
 | ------------------------ | ----------- | ------- |
-| `cidadao@sospeconha.dev` | `Teste@123` | CIDADAO (com 3 avistamentos de exemplo perto da Paulista) |
+| `cidadao@sospeconha.dev` | `Teste@123` | CIDADAO (com 3 avistamentos e 1 ocorrência de exemplo, perto da Paulista) |
 | `gestor@sospeconha.dev`  | `Teste@123` | GESTOR  |
 
 Os mesmos do MVP-01, para o app funcionar igual com esta API e com a do grupo. No Swagger, faça o
 login, copie o `token` e cole em **Authorize**.
+
+### Resumo de pré-atendimento
+
+Ao registrar uma ocorrência, a API responde na hora com o resumo `PENDENTE` e, depois do commit,
+gera o resumo **em segundo plano** (`@Async`). Hoje ele é montado por modelo de texto
+(`MODELO_PADRAO`), só com os dados da triagem, sem nome, e-mail, telefone ou coordenadas (RN-G6):
+
+```
+PRÉ-ATENDIMENTO — Antídoto
+Animal: Escorpião · Faixa etária: criança
+Picada: 22:15 (há 25 min)
+Sintomas: Vômitos repetidos (ALERTA)
+Urgência: EMERGÊNCIA — Sinal de alerta; Escorpião em criança
+Destino: Hospital Exemplo Centro
+```
+
+A IA de verdade (Spring AI + Groq) é o Passo 7, opcional; se ela falhar, continua valendo este modelo.
 
 ### Unidades de saúde (fictícias)
 
@@ -83,6 +100,10 @@ use a localização da Avenida Paulista (-23.5614, -46.6559).
 | `GET /api/avistamentos/{id}` | logado  | Detalhe; de outro usuário, 404 (RN-G5)       |
 | `PUT /api/avistamentos/{id}` | logado  | Edita; atualiza o `atualizadoEm`             |
 | `DELETE /api/avistamentos/{id}` | logado | Exclui (204)                                |
+| `POST /api/ocorrencias`      | logado  | Registra a picada: calcula a urgência (RN-U) e responde 201 com o resumo `PENDENTE`; hora da picada entre agora e 72 h atrás (RN-G4) |
+| `GET /api/ocorrencias/minhas` | logado | Histórico, mais recentes primeiro, paginado  |
+| `GET /api/ocorrencias/{id}`  | logado  | Detalhe; o app consulta a cada 3 s até o resumo sair do `PENDENTE` |
+| `DELETE /api/ocorrencias/{id}` | logado | Remove do histórico (204)                   |
 
 **App no celular apontando para esta API:** no `.env` do app,
 `EXPO_PUBLIC_API_URL=http://<ip do computador>:8080` (o mesmo Wi-Fi), e `npx expo start --clear`.
@@ -120,7 +141,7 @@ Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
 
 ```
 src/main/java/br/com/fiap/antidoto/
-├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), DadosIniciais (usuários, unidades e avistamentos de teste)
+├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), AssincronoConfig (@Async), DadosIniciais (usuários, unidades e exemplos de teste)
 ├── controller/   recebe, valida (@Valid) e chama o service
 ├── dto/          records de request e response, com os nomes do contrato; PaginaResponse; erro/
 ├── exception/    TratadorGlobalDeErros (formato de erro do contrato) e as exceções da API
@@ -128,7 +149,9 @@ src/main/java/br/com/fiap/antidoto/
 ├── model/        entidades JPA e enums
 ├── repository/   Spring Data JPA
 ├── security/     SecurityConfig (rotas públicas e protegidas, CORS), JwtService, JwtFiltro, RespostasDeSeguranca (401/403)
-└── service/      regras de negócio (AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService, DistanciaService, AvistamentoService)
+├── ia/           ResumoModeloPadrao (o resumo montado por modelo de texto)
+├── mensageria/   OcorrenciaCriadaEvento e ResumoOcorrenciaConsumer (gera o resumo depois do commit, em segundo plano)
+└── service/      regras de negócio (AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService, DistanciaService, AvistamentoService, UrgenciaService, OcorrenciaService)
 src/main/resources/
 ├── application.properties
 └── db/migration/ V1__criar_tabelas.sql (Flyway, SQL do PostgreSQL)
@@ -150,7 +173,7 @@ não enxerga:
 | Oracle em produção                     | PostgreSQL no Render (o Render não tem Oracle); o SQL do Flyway é de Postgres  |
 | RabbitMQ para o resumo                 | Resumo em segundo plano dentro da API (`@Async`), o modo sem fila do MVP-01    |
 | `br.com.sospeconha.api`, "SOS Peçonha" | `br.com.fiap.antidoto`, "Antídoto" (o nome do app)                             |
-| CRUD de unidades do GESTOR             | Fora: o app não usa. As leituras públicas (`GET /api/unidades` e `/{id}`) existem |
+| CRUD de unidades do GESTOR e `GET /api/ocorrencias/unidade/{id}` | Fora: o app não usa. As leituras públicas (`GET /api/unidades` e `/{id}`) existem |
 
 ---
 

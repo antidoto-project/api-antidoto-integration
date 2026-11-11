@@ -32,15 +32,17 @@ Biblioteca nova: só combinando antes.
 ```
 br.com.fiap.antidoto
 ├── AntidotoApiApplication.java
-├── config/       RelogioConfig (bean Clock), OpenApiConfig (Bearer no Swagger), DadosIniciais (usuários, as 12 unidades fictícias e os 3 avistamentos do cidadão)
-├── controller/   AuthController, UsuarioController, UnidadeController, AvistamentoController. Próximo: OcorrenciaController (Passo 5)
-├── dto/          PaginaResponse; erro/ (ErroResponse, CampoErroResponse); usuario/ (CadastroRequest, LoginRequest, AtualizarUsuarioRequest, UsuarioResponse, AuthResponse); unidade/ (UnidadeProximaResponse, UnidadeResponse); avistamento/ (AvistamentoRequest, AvistamentoResponse)
+├── config/       RelogioConfig (bean Clock), OpenApiConfig (Bearer no Swagger), AssincronoConfig (@EnableAsync), DadosIniciais (usuários, as 12 unidades fictícias, 3 avistamentos e 1 ocorrência do cidadão)
+├── controller/   AuthController, UsuarioController, UnidadeController, AvistamentoController, OcorrenciaController
+├── dto/          PaginaResponse; erro/ (ErroResponse, CampoErroResponse); usuario/ (CadastroRequest, LoginRequest, AtualizarUsuarioRequest, UsuarioResponse, AuthResponse); unidade/ (UnidadeProximaResponse, UnidadeResponse); avistamento/ (AvistamentoRequest, AvistamentoResponse); ocorrencia/ (OcorrenciaRequest, OcorrenciaResponse, ResultadoUrgencia)
+├── ia/           ResumoModeloPadrao (resumo por modelo de texto). Passo 7: ResumoIaService (Spring AI)
+├── mensageria/   OcorrenciaCriadaEvento, ResumoOcorrenciaConsumer (@Async depois do commit; sem RabbitMQ)
 ├── exception/    TratadorGlobalDeErros, RecursoNaoEncontradoException, RegraDeNegocioException, ConflitoException, CredenciaisInvalidasException
-├── mapper/       UsuarioMapper, UnidadeMapper, AvistamentoMapper (entidade → DTO)
-├── model/        Usuario, UnidadeSaude, Ocorrencia, Avistamento + enums (Urgencia tem maior()/proxima(); Sintoma tem texto e alerta)
+├── mapper/       UsuarioMapper, UnidadeMapper, AvistamentoMapper, OcorrenciaMapper (entidade → DTO; avisos RN-G2/RN-G7)
+├── model/        Usuario, UnidadeSaude, Ocorrencia, Avistamento + enums (rótulos iguais aos do app; Urgencia tem maior()/proxima(); Sintoma tem texto e alerta)
 ├── repository/   interfaces JpaRepository
 ├── security/     SecurityConfig, JwtService, JwtFiltro, RespostasDeSeguranca, UsuarioAutenticado
-└── service/      AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService (RN-S), DistanciaService (Haversine), AvistamentoService
+└── service/      AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService (RN-S), DistanciaService (Haversine), AvistamentoService, UrgenciaService (RN-U), OcorrenciaService
 ```
 
 ---
@@ -100,7 +102,7 @@ Todo erro sai no formato do contrato, montado pelo `TratadorGlobalDeErros`:
 - `UnidadeService.buscarProximas`: carrega as ativas (RN-S1), filtra, calcula a distância (`DistanciaService`, Haversine com raio de 6371 km), ordena da mais perto (RN-S2; empate pelo id), corta no `limite` e arredonda o `distanciaKm` para 1 casa. Não há raio máximo. Lista vazia é 200 `[]` (RN-S4).
 - Parâmetros validados na URL (`@DecimalMin`/`@DecimalMax`, `@Min`/`@Max`): latitude −34 a 6, longitude −74 a −34, limite 1 a 10.
 
-## 7. Recursos do usuário (avistamentos e, no Passo 5, ocorrências)
+## 7. Recursos do usuário (avistamentos e ocorrências)
 
 - **Só o dono (RN-G5):** toda busca passa pelo id do usuário logado (`findByIdAndUsuarioId`). De outro usuário ou inexistente: `RecursoNaoEncontradoException` → **404**, nunca 403.
 - O dono vem do token (`@AuthenticationPrincipal`), nunca do corpo; na criação, `usuarioRepository.getReferenceById(id)`.
@@ -108,7 +110,15 @@ Todo erro sai no formato do contrato, montado pelo `TratadorGlobalDeErros`:
 - `dataHora` no futuro além de 5 min (relógio do celular adiantado): `RegraDeNegocioException("dataHora", ...)`. O app manda a `dataHora` original no PUT; o PUT atualiza o `atualizadoEm`. DELETE é físico (204).
 - Observação em branco vira `null` (construtor do record). Erro de latitude ou longitude usa a mensagem do app ("A localização precisa ser no Brasil"); como o app chama o campo de `localizacao`, ela aparece como mensagem geral.
 
-## 8. Banco
+## 8. Ocorrências e resumo (MVP-01 §6.3, §8 e §9)
+
+- **RN-U:** `UrgenciaService` é a cópia exata do `utils/urgencia.ts` do app (mesmos motivos, mesma ordem, os mesmos 10 casos em `UrgenciaServiceTest`). Mudou um? Muda o outro, combinando antes. A IA **nunca** decide a urgência.
+- **RN-G4:** hora da picada entre agora (+5 min) e 72 h atrás; fora disso, `RegraDeNegocioException("horaPicada", ...)`. Unidade de destino inexistente ou desativada: 404.
+- **Fluxo do resumo:** o `POST` salva com `PENDENTE` e publica `OcorrenciaCriadaEvento`; o `ResumoOcorrenciaConsumer` roda **depois do commit**, em outra thread (`@Async` + `@TransactionalEventListener(AFTER_COMMIT)` + `REQUIRES_NEW`), e é idempotente (só mexe se ainda estiver `PENDENTE`). Sem RabbitMQ: é o modo `@Async` do MVP-01 §9.
+- **Resumo:** hoje sempre o `ResumoModeloPadrao` → `MODELO_PADRAO`. Só dados da triagem (RN-G6), hora em Brasília, nunca dose ou remédio. **Não logar o texto do resumo** (só id, status e tempo).
+- A resposta sempre traz `ligar192` (EMERGENCIA), `aviso` (RN-G2) e `avisoResumo` (RN-G7), as constantes do `OcorrenciaMapper`.
+
+## 9. Banco
 
 - O schema é do Flyway (`V1__criar_tabelas.sql`). Mudou uma entidade? **Nova migração** `V2__...`; nunca editar uma migração que já rodou no Render.
 - SQL do PostgreSQL que também roda no H2 em modo PostgreSQL: `BIGINT ... GENERATED BY DEFAULT AS IDENTITY`, `VARCHAR`, `BOOLEAN`, `DOUBLE PRECISION` (coordenadas), `TIMESTAMP(6) WITH TIME ZONE` (datas `Instant`).
@@ -117,13 +127,13 @@ Todo erro sai no formato do contrato, montado pelo `TratadorGlobalDeErros`:
 
 ---
 
-## 9. Paginação
+## 10. Paginação
 
 Parâmetros `pagina` (padrão 0) e `tamanho` (padrão 20, máximo 50). Resposta **sempre** `PaginaResponse<T>` (`conteudo`, `pagina`, `tamanho`, `totalElementos`, `totalPaginas`), nunca o `Page` do Spring.
 
 ---
 
-## 10. O que nunca fazer
+## 11. O que nunca fazer
 
 - Responder diferente do `openapi-mvp.yaml` (rota, campo, enum, status).
 - Devolver entidade JPA ou `Page` do Spring.
@@ -131,12 +141,12 @@ Parâmetros `pagina` (padrão 0) e `tamanho` (padrão 20, máximo 50). Resposta 
 - Regra de negócio no controller; `@Autowired` em campo; `System.out.println`; `catch` vazio.
 - 403 para recurso de outro usuário (é 404).
 - Senha, token ou segredo no código ou no log; commitar o `.env`.
-- Mandar nome, e-mail, telefone ou coordenadas para a IA; falar de dose ou remédio no resumo **(Passo 5/7)**.
-- Deixar a ocorrência falhar por causa do resumo: sempre há o modelo padrão **(Passo 5)**.
+- Mandar nome, e-mail, telefone ou coordenadas para a IA; falar de dose ou remédio no resumo.
+- Deixar a ocorrência falhar por causa do resumo: sempre há o modelo padrão.
 
 ---
 
-## 11. Checklist antes de todo commit
+## 12. Checklist antes de todo commit
 
 ```
 [ ] ./gradlew test passando

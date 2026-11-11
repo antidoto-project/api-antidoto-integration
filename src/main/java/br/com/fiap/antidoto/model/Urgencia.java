@@ -5,9 +5,17 @@ package br.com.fiap.antidoto.model;
  * MODERADA < ALTA < EMERGENCIA. Não existe "baixa" nem "sem urgência".
  */
 public enum Urgencia {
-    MODERADA,
-    ALTA,
-    EMERGENCIA;
+    MODERADA("MODERADA"),
+    ALTA("ALTA"),
+    EMERGENCIA("EMERGÊNCIA");
+
+    private final String rotulo;
+
+    Urgencia(String rotulo) {
+        this.rotulo = rotulo;
+    }
+
+    public String getRotulo() { return rotulo; }
 
     /** O maior entre os dois níveis (RN-U: nivel = max(nivel, ...)). */
     public Urgencia maior(Urgencia outra) {

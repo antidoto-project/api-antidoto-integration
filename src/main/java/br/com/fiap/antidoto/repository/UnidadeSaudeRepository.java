@@ -18,4 +18,6 @@ public interface UnidadeSaudeRepository extends JpaRepository<UnidadeSaude, Long
     Optional<UnidadeSaude> findByIdAndAtivaTrue(Long id);
 
     boolean existsByNome(String nome);
+
+    Optional<UnidadeSaude> findByNome(String nome);
 }
