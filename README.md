@@ -1,310 +1,332 @@
-# Antídoto — API Java
+# 🦂 Antídoto — CI/CD com Azure DevOps
 
-API REST que o app **Antídoto** consome (Global Solution 2026/2 · FIAP · CitizenTech).
+API REST do Antídoto em Java (Spring Boot), com integração e entrega contínuas no **Azure DevOps**, deploy automático no **Azure Web App** e banco **PostgreSQL** rodando em container na Azure.
 
-> **Esta API é só para o app.** Ela existe para o app funcionar de verdade e para testar a
-> integração. **Não é a entrega da disciplina de Java**: essa é feita à parte, sobre o mesmo
-> contrato. Por isso as duas são trocáveis no app, só mudando o `EXPO_PUBLIC_API_URL`.
+## 👥 Integrantes
 
-- **Contrato:** [`docs/api/openapi-mvp.yaml`](docs/api/openapi-mvp.yaml), o mesmo do app. Responder diferente dele quebra o app.
-- **Regras:** [`docs/MVP-00-LEIA-ME.md`](docs/MVP-00-LEIA-ME.md) (urgência, soros, regras gerais) e [`docs/MVP-01-BACKEND-JAVA.md`](docs/MVP-01-BACKEND-JAVA.md).
-- **Os dados de exemplo são fictícios.**
-
----
-
-## 🚧 Andamento
-
-| Passo | O que entra                                                                                | Situação |
-| ----- | ------------------------------------------------------------------------------------------ | -------- |
-| 1     | Base: Spring Boot, banco com Flyway, entidades, formato de erro, paginação, Swagger, Docker | ✅       |
-| 2     | Login e cadastro (JWT), rotas protegidas, `/api/usuarios/me`, usuários de teste            | ✅       |
-| 3     | Unidades próximas com soro compatível (RN-S) e 12 unidades fictícias                       | ✅       |
-| 4     | CRUD de avistamentos (só o dono)                                                           | ✅       |
-| 5     | Ocorrências: urgência (RN-U) e resumo de pré-atendimento em segundo plano                  | ✅       |
-| 6     | Deploy no Render (Postgres) e o app apontando para a API                                   | ✅       |
-| 7     | (Opcional) Resumo com IA de verdade (Spring AI + Groq), com o modelo padrão de reserva     | ✅       |
-| 7.1   | Ajustes da IA depois do teste no Render: aquecimento, instruções mais rígidas e conferência | ✅       |
-| 8     | Primeiros socorros pela API e atualizar a ocorrência (o CRUD completo no app)               | ✅       |
-| 9     | Alterar senha (logado)                                                                       | ✅       |
-
-**No ar:** https://api-antidoto-integration.onrender.com (Swagger em `/swagger-ui.html`).
+| Nome | RM | Turma |
+|---|---|---|
+| Gustavo Souto de Melo | RM558595 | 2TDSPW |
+| Iago Liziero Pereira | RM564063 | 2TDSPW |
+| Icaro José Dos Santos | RM562403 | 2TDSPW |
+| Leonardo Barbosa Santos | RM558230 | 2TDSPW |
 
 ---
 
-## 🛠️ Tecnologias
+## 📌 Descrição da solução
 
-Java 21 · Spring Boot 4 (Web MVC, Validation, Data JPA, Security, Actuator) · JWT (JJWT) · Flyway · H2 (computador e testes) ·
-PostgreSQL (Render) · Spring AI (cliente OpenAI apontando para o Groq) · springdoc-openapi (Swagger) · JUnit 5 + MockMvc ·
-Gradle (wrapper) · Docker.
+O **Antídoto** é um app de orientação em acidentes com animais peçonhentos (escorpião, cobra, aranha, lagarta, abelha). No SOS, sem precisar de login, a pessoa responde poucas perguntas e recebe o nível de urgência, os primeiros socorros e as unidades de saúde mais próximas com soro compatível com o animal, com os botões de ligar e de rota. Logado, o cidadão registra a ocorrência (com um resumo de pré-atendimento para levar à unidade) e os avistamentos de animais, que ajudam a mapear os focos. Esta API é o back-end que o app consome: cadastro e login com JWT, triagem de urgência, unidades com soro, primeiros socorros, ocorrências e avistamentos.
+
+Nesta entrega, a API ganhou uma esteira de CI/CD completa no Azure DevOps. A cada alteração na branch `main`, o código é compilado, testado e empacotado automaticamente, e a nova versão é publicada no Azure Web App sem nenhum passo manual. URL, usuário e senha do banco e o segredo do JWT ficam fora do código, como variáveis protegidas da pipeline.
+
+### 🧰 Stack
+
+| Camada | Tecnologia |
+|---|---|
+| Linguagem e framework | Java 21, Spring Boot 4 (Web MVC, Data JPA, Security, Validation, Actuator) |
+| Segurança | Spring Security com JWT (JJWT, HS256) e senhas com BCrypt |
+| Build | Gradle (wrapper) |
+| Banco de dados | PostgreSQL 16 em container no Azure Container Instances, com migrations do Flyway |
+| Testes automáticos | JUnit 5, AssertJ e MockMvc, com H2 em memória no modo PostgreSQL |
+| Documentação da API | springdoc-openapi (Swagger UI) |
+| IA (opcional) | Spring AI para o resumo de pré-atendimento. Desligada por padrão (`IA_HABILITADA`): sem ela, vale o resumo por modelo de texto |
+| Código-fonte | GitHub (`api-antidoto-integration`, branch `main`) |
+| CI/CD | Azure DevOps: pipeline de build (CI) e Release (CD) |
+| Hospedagem | Azure Web App (App Service Linux, plano B1) |
+| Imagem do banco | Azure Container Registry |
 
 ---
 
-## ▶️ Como rodar
+## 🏗️ Arquitetura e fluxo CI/CD
 
-Pré-requisito: **JDK 21**. O Gradle vem pelo wrapper; não precisa instalar.
+![Arquitetura e fluxo CI/CD do Antídoto](docs/antidoto-diagrama-cicd.png)
 
-```bash
-./gradlew bootRun          # Windows: gradlew.bat bootRun
+**Fluxo numerado**
+
+1. O desenvolvedor faz commit e push na branch `main` do GitHub.
+2. O push dispara sozinho o pipeline de CI no Azure DevOps.
+3. Num agente Linux da Microsoft (`ubuntu-latest`), o CI prepara o Java 21 e compila com Gradle.
+4. Rodam os 110 testes automáticos (JUnit com H2 em memória). O resultado aparece na aba **Tests**.
+5. O `.jar` é publicado como o artefato `app`.
+6. O artefato novo dispara sozinho o Release de CD.
+7. O Release faz o Zip Deploy no Web App pela conexão de serviço `azure-antidoto` e aplica as variáveis do banco e do JWT, com os segredos protegidos.
+8. O Web App sobe com o `.jar` novo, o Flyway prepara as tabelas e a API conecta no PostgreSQL do Container Instances pela porta 5432.
+9. O usuário final (app Antídoto ou navegador) acessa a API pela internet, com HTTPS.
+
+**Onde cada ferramenta atua**
+
+| Componente | Papel |
+|---|---|
+| GitHub | Guarda o código-fonte. O push na `main` é o gatilho da esteira |
+| Azure DevOps · `Antidoto-CI` | Build, testes automáticos e publicação do artefato |
+| Azure DevOps · `Antidoto - Release` | Deploy automático do artefato no Web App |
+| Conexão de serviço `azure-antidoto` | Dá ao Azure DevOps acesso à assinatura da Azure (Azure Resource Manager) |
+| Azure Web App `antidoto-api-564063` | Executa a API (Java 21, Linux) |
+| Azure Container Instances `postgres-antidoto` | Executa o banco PostgreSQL 16 |
+| Azure Container Registry `antidoto564063` | Guarda a imagem do PostgreSQL usada pelo container |
+
+---
+
+## 🔁 Pipelines no Azure DevOps
+
+Projeto: **_preencher com o nome do projeto_** (organização `_preencher_`, privado, Git, processo Agile).
+
+### CI — `Antidoto-CI`
+
+Pipeline criada pelo editor clássico, com o código vindo direto do GitHub (`api-antidoto-integration`, branch `main`).
+
+| Ordem | Tarefa | Configuração |
+|---|---|---|
+| 1 | Java tool installer | JDK 21, x64, pré-instalado no agente |
+| 2 | Gradle | `./gradlew build`, publica os resultados em `**/build/test-results/test/TEST-*.xml` com o título "Testes de Código" |
+| 3 | Copy files | Copia `**/build/libs/*.jar` para `$(Build.ArtifactStagingDirectory)` (o build gera um `.jar` só, o executável) |
+| 4 | Publish build artifacts | Publica o artefato `app` no Azure Pipelines |
+
+- **Agente:** Azure Pipelines, `ubuntu-latest`
+- **Gatilho:** integração contínua ligada na branch `main`
+- **Número do build:** `$(date:yyyyMMdd)$(rev:.r)`
+
+### CD — `Antidoto - Release`
+
+| Item | Configuração |
+|---|---|
+| Artefato | Build `Antidoto-CI`, versão Latest, alias `Antidoto - CI` |
+| Gatilho | Continuous deployment trigger ligado: todo artefato novo cria um Release |
+| Stage | `Desenvolvimento`, agente `ubuntu-latest` |
+| Tarefa | Azure App Service deploy: conexão `azure-antidoto`, Web App on Linux, `antidoto-api-564063`, pacote `$(System.DefaultWorkingDirectory)/**/*.jar`, método Zip Deploy |
+| App settings | `-DB_URL "$(DB_URL)" -DB_USUARIO "$(DB_USUARIO)" -DB_SENHA "$(DB_SENHA)" -JWT_SECRET "$(JWT_SECRET)"` |
+
+### 🔒 Variáveis protegidas
+
+| Variável | Onde | Proteção |
+|---|---|---|
+| `DB_URL` | Variables do Release (escopo Release) | — |
+| `DB_USUARIO` | Variables do Release (escopo Release) | — |
+| `DB_SENHA` | Variables do Release (escopo Release) | Secreta (cadeado): não aparece em logs nem na tela |
+| `JWT_SECRET` | Variables do Release (escopo Release) | Secreta (cadeado). Base64 de 32 bytes, gerado com `openssl rand -base64 32` |
+
+Nenhuma senha fica no código: o `application.properties` só lê variáveis de ambiente. Sem elas (no computador e nos testes), a API usa um H2 em memória.
+
+```properties
+spring.datasource.url=${DB_URL:jdbc:h2:mem:antidoto;MODE=PostgreSQL;...}
+spring.datasource.username=${DB_USUARIO:sa}
+spring.datasource.password=${DB_SENHA:}
+antidoto.jwt.segredo=${JWT_SECRET:}
 ```
 
-- API: http://localhost:8080
-- Swagger: http://localhost:8080/swagger-ui.html
-- Saúde: http://localhost:8080/actuator/health
+Valor do `DB_URL` na Azure: `jdbc:postgresql://postgres-antidoto-564063.eastus2.azurecontainer.io:5432/antidoto`.
 
-Sem nenhuma variável, a API usa o **H2 em memória** (os dados somem ao parar). O Flyway cria as
-tabelas na subida, e os usuários de teste são criados em seguida.
+---
 
-### Usuários de teste (fictícios)
+## ✅ Testes automáticos
 
-| E-mail                   | Senha       | Perfil  |
-| ------------------------ | ----------- | ------- |
-| `cidadao@sospeconha.dev` | `Teste@123` | CIDADAO (com 3 avistamentos e 1 ocorrência de exemplo, perto da Paulista) |
-| `gestor@sospeconha.dev`  | `Teste@123` | GESTOR  |
+São 110 testes. Os de API sobem a aplicação e chamam as rotas com o MockMvc, como o app faz, com login por JWT. Os de regra testam os services direto:
 
-Os mesmos do MVP-01, para o app funcionar igual com esta API e com a do grupo. No Swagger, faça o
-login, copie o `token` e cole em **Authorize**.
+| Classes | O que testa |
+|---|---|
+| `AntidotoApiApplicationTests`, `PaginaInicialTest` | A aplicação sobe com o Flyway e o Hibernate conferindo as tabelas, a saúde responde `UP`, o Swagger e a página inicial abrem sem login |
+| `AuthControllerTest`, `JwtServiceTest` | Cadastro, login, token JWT, perfil, troca de senha e 401 sem login ou com token inválido |
+| `AvistamentoControllerTest` | CRUD completo do avistamento e acesso só do dono (de outro usuário é 404) |
+| `OcorrenciaControllerTest` | Registro, consulta, atualização e exclusão da ocorrência, com a urgência calculada pela API |
+| `UnidadeControllerTest`, `CompatibilidadeSoroServiceTest`, `DistanciaServiceTest` | Unidades mais próximas com soro compatível com o animal (Haversine) |
+| `UrgenciaServiceTest` | Regras de urgência da triagem |
+| `ConteudoControllerTest` | Primeiros socorros por animal, sem dose nem remédio |
+| `ResumoIaServiceTest`, `ResumoIaIntegracaoTest`, `ResumoModeloPadraoTest` | Resumo de pré-atendimento: a IA com um servidor falso (nenhum teste chama a IA de verdade) e o modelo de texto de reserva |
+| `TratadorGlobalDeErrosTest`, `PaginaResponseTest`, `BancoDoRenderTest` | Formato de erro, paginação e a conversão da URL do banco do Render |
 
-### Resumo de pré-atendimento
+Sem a variável `DB_URL`, os testes usam um H2 em memória no modo PostgreSQL, com a **mesma** migration do Flyway que roda no PostgreSQL da Azure. Assim o CI não depende do banco da nuvem estar ligado e, a cada build, confere que as tabelas batem com as entidades.
 
-Ao registrar uma ocorrência, a API responde na hora com o resumo `PENDENTE` e, depois do commit,
-gera o resumo **em segundo plano** (`@Async`). Ele usa só os dados da triagem: nada de nome, e-mail,
-telefone ou coordenadas (RN-G6).
-
-- **Com a IA ligada** (`IA_HABILITADA=true` e a `GROQ_API_KEY`): o texto vem do Groq e o resumo fica
-  `PRONTO`.
-- **Sem a IA, ou se ela falhar** (erro, chave inválida, mais de 6 s, ou uma resposta que não passa
-  na conferência): vale o modelo de texto, com o status `MODELO_PADRAO`. A ocorrência nunca fica sem
-  resumo.
-
-O modelo de texto:
-
-```
-PRÉ-ATENDIMENTO — Antídoto
-Animal: Escorpião · Faixa etária: criança
-Picada: 22:15 (há 25 min)
-Sintomas: Vômitos repetidos (ALERTA)
-Urgência: EMERGÊNCIA — Sinal de alerta; Escorpião em criança
-Destino: Hospital Exemplo Centro
-```
-
-### IA do resumo (Groq)
-
-A API fala com o Groq pelo **Spring AI**, com o cliente da OpenAI apontando para
-`https://api.groq.com/openai/v1` (o Groq aceita a mesma API). O modelo é o `openai/gpt-oss-120b`,
-com raciocínio baixo, temperatura 0,2 e até 800 tokens. As instruções (em
-`ResumoIaService.INSTRUCOES`) são as do MVP-01 com regras a mais: usar só os dados enviados, copiar a
-urgência, os motivos e o destino como vieram, chamar de alerta só o sintoma marcado com `(ALERTA)`,
-uma informação por linha e nunca sugerir tratamento, remédio ou dose. A chave **só existe na API**
-(variável de ambiente): o app nunca a vê.
-
-**Conferência da resposta** (`ResumoIaService.validar`): a resposta é descartada se vier vazia, com
-mais de 1.200 caracteres, falando de dose, mg, ml, ampola ou medicamento, com outro nível de urgência
-(a IA nunca decide a urgência), falando em alerta sem sintoma de alerta ou com um campo vazio
-(`Destino:` sem nada).
-
-**Aquecimento:** no plano grátis do Render (0,1 de CPU), a primeira chamada depois da subida carrega
-o cliente HTTP e passava dos 6 s. Por isso, logo depois de subir, a API faz uma chamada mínima ao Groq
-(log `IA pronta (aquecimento) em ... ms`) e a primeira ocorrência já encontra tudo pronto.
-
-1. Crie uma conta grátis no [GroqCloud](https://console.groq.com) e uma chave em
-   [API Keys](https://console.groq.com/keys) (começa com `gsk_`). Copie e guarde num lugar seguro;
-   não cole em nenhum arquivo do projeto.
-2. No computador:
-
-   ```bash
-   GROQ_API_KEY=gsk_... IA_HABILITADA=true ./gradlew bootRun
-   ```
-
-   No Windows (PowerShell): `$env:GROQ_API_KEY="gsk_..."; $env:IA_HABILITADA="true"; .\gradlew.bat bootRun`.
-3. Registre uma ocorrência (no app ou no Swagger) e veja o log: `Resumo da ocorrência N: PRONTO em ... ms`.
-   Com `MODELO_PADRAO`, a linha de cima diz o motivo: `IA indisponível ...` (erro, chave inválida ou
-   tempo esgotado) ou `resposta descartada` (não passou na conferência). O log nunca mostra os dados
-   da triagem nem o texto do resumo. Busque por `ResumoIaService` (sem acento) no log do Render.
-
-No Render, a chave vai em **Environment** (veja o deploy). Os limites do plano grátis ficam em
-[console.groq.com/settings/limits](https://console.groq.com/settings/limits).
-
-### Unidades de saúde (fictícias)
-
-São 12, espalhadas por São Paulo (Sé, Paulista, Consolação, Pinheiros, Butantã, Lapa, Santana,
-Tatuapé, Vila Mariana, Ipiranga, Jabaquara e Santo Amaro), com combinações de soros que cobrem
-todas as linhas da RN-S: uma UPA sem soro, duas UBS (que não entram na abelha) e três hospitais que
-atendem o "Não sei" (ANTIBOTRÓPICO + ESCORPIÔNICO ou ARACNÍDICO). Nomes, endereços e telefones são
-inventados ("Hospital Exemplo Centro", "Rua Exemplo, 100"). Para testar perto delas no emulador,
-use a localização da Avenida Paulista (-23.5614, -46.6559).
-
-### Rotas prontas
-
-| Rota                         | Acesso  | O que faz                                    |
-| ---------------------------- | ------- | -------------------------------------------- |
-| `POST /api/auth/cadastro`    | público | Cria um CIDADAO e já devolve o token (201)   |
-| `POST /api/auth/login`       | público | Login (200); errado: 401 "E-mail ou senha incorretos" |
-| `GET /api/usuarios/me`       | logado  | Dados de quem está logado                    |
-| `PUT /api/usuarios/me`       | logado  | Muda só o nome e o telefone                  |
-| `PUT /api/usuarios/me/senha` | logado  | Troca a senha conferindo a atual (204). Senha atual errada: 400 no campo `senhaAtual`, não 401 |
-| `GET /api/unidades/proximas` | público | Unidades ativas com soro compatível com o animal (RN-S), da mais perto para a mais longe (`latitude`, `longitude`, `tipoAnimal`, `limite` de 1 a 10, padrão 5) |
-| `GET /api/unidades`          | público | Unidades ativas por nome, paginadas          |
-| `GET /api/unidades/{id}`     | público | Detalhe de uma unidade ativa                 |
-| `POST /api/avistamentos`     | logado  | Registra um avistamento (201); `dataHora` sem futuro (tolerância de 5 min) |
-| `GET /api/avistamentos/meus` | logado  | Os do usuário, mais recentes primeiro, paginados (`tamanho` até 50) |
-| `GET /api/avistamentos/{id}` | logado  | Detalhe; de outro usuário, 404 (RN-G5)       |
-| `PUT /api/avistamentos/{id}` | logado  | Edita; atualiza o `atualizadoEm`             |
-| `DELETE /api/avistamentos/{id}` | logado | Exclui (204)                                |
-| `POST /api/ocorrencias`      | logado  | Registra a picada: calcula a urgência (RN-U) e responde 201 com o resumo `PENDENTE`; hora da picada entre agora e 72 h atrás (RN-G4) |
-| `GET /api/ocorrencias/minhas` | logado | Histórico, mais recentes primeiro, paginado  |
-| `GET /api/ocorrencias/{id}`  | logado  | Detalhe; o app consulta a cada 3 s até o resumo sair do `PENDENTE` |
-| `PUT /api/ocorrencias/{id}`  | logado  | Atualiza a triagem (ex.: sintomas novos ou outra unidade): mesmas regras do registro, urgência recalculada com a hora de agora e resumo novo (`PENDENTE`); com o resumo anterior ainda `PENDENTE`, 409 |
-| `DELETE /api/ocorrencias/{id}` | logado | Remove do histórico (204)                   |
-| `GET /api/conteudo/primeiros-socorros/{tipoAnimal}` | público | O que fazer, o que não fazer e os cuidados do animal (MVP-02 §6) |
-
-**App no celular apontando para esta API:** no `.env` do app,
-`EXPO_PUBLIC_API_URL=http://<ip do computador>:8080` (o mesmo Wi-Fi), e `npx expo start --clear`.
-
-### Testes
+Para rodar na máquina:
 
 ```bash
 ./gradlew test
 ```
 
-### Docker
+---
+
+## ☁️ Infraestrutura na Azure
+
+Grupo de recursos `rg-antidoto-gs`, região East US 2.
+
+| Recurso | Nome | Detalhes |
+|---|---|---|
+| Container Registry | `antidoto564063` | SKU Basic, guarda a imagem `postgres:16` |
+| Container Instances | `postgres-antidoto` | PostgreSQL 16, porta 5432, banco `antidoto`, acesso por `postgres-antidoto-564063.eastus2.azurecontainer.io` |
+| App Service Plan | `plan-antidoto` | Linux, B1 |
+| Web App | `antidoto-api-564063` | Java 21 (`JAVA:21-java21`), `https://antidoto-api-564063.azurewebsites.net` |
+
+### Como recriar a infraestrutura (Azure CLI)
 
 ```bash
-docker build -t antidoto-api .
-docker run -p 8080:8080 antidoto-api
+RG="rg-antidoto-gs"
+LOCATION="eastus2"
+ACR="antidoto564063"
+DB="postgres-antidoto"
+PLAN="plan-antidoto"
+WEBAPP="antidoto-api-564063"
+
+# a senha do banco é digitada na hora e não fica salva em nenhum arquivo
+read -s -p "Senha do PostgreSQL: " DB_PASSWORD; echo
+
+az group create --name $RG --location $LOCATION
+
+# registry com a imagem do PostgreSQL
+az acr create --resource-group $RG --name $ACR --sku Basic --admin-enabled true
+az acr import --name $ACR --source docker.io/library/postgres:16 --image postgres:16
+# se o Docker Hub limitar os downloads, adicione: --username <usuario-dockerhub> --password <token>
+
+ACR_USER=$(az acr credential show --name $ACR --query username -o tsv)
+ACR_PASS=$(az acr credential show --name $ACR --query "passwords[0].value" -o tsv)
+
+# banco PostgreSQL em container
+az container create \
+  --resource-group $RG \
+  --name $DB \
+  --image $ACR.azurecr.io/postgres:16 \
+  --os-type Linux --cpu 1 --memory 1.5 \
+  --ports 5432 \
+  --dns-name-label postgres-antidoto-564063 \
+  --registry-login-server $ACR.azurecr.io \
+  --registry-username $ACR_USER \
+  --registry-password $ACR_PASS \
+  --environment-variables POSTGRES_DB=antidoto POSTGRES_USER=antidoto \
+  --secure-environment-variables POSTGRES_PASSWORD=$DB_PASSWORD
+
+# plano e Web App Linux com Java 21
+az appservice plan create --name $PLAN --resource-group $RG --is-linux --sku B1
+az webapp create --name $WEBAPP --resource-group $RG --plan $PLAN --runtime "JAVA:21-java21"
+```
+
+A conexão com o banco e o segredo do JWT são aplicados no Web App pelo próprio Release (App settings), a partir das variáveis protegidas da pipeline.
+
+### Ligar e desligar entre os dias de uso (economia de crédito)
+
+O container do banco não tem volume: quando ele é desligado e ligado de novo, o banco volta vazio. Por isso, ao ligar, primeiro sobe o banco e depois reinicia o Web App: na subida, o Flyway recria as tabelas e a API cadastra de novo os usuários e as unidades de teste.
+
+```bash
+# ligar (primeiro o banco, depois o app)
+az container start --resource-group $RG --name $DB
+az appservice plan update --name $PLAN --resource-group $RG --sku B1
+az webapp config set --name $WEBAPP --resource-group $RG --always-on true
+az webapp restart --name $WEBAPP --resource-group $RG
+
+# desligar
+az container stop --resource-group $RG --name $DB
+az webapp config set --name $WEBAPP --resource-group $RG --always-on false
+az appservice plan update --name $PLAN --resource-group $RG --sku F1
 ```
 
 ---
 
-## ☁️ Deploy no Render
+## 🌐 Rotas
 
-O [`render.yaml`](render.yaml) é um **Blueprint**: cria de uma vez o Postgres grátis e a API (Docker),
-na mesma região, ligados pela rede interna.
+Base URL: `https://antidoto-api-564063.azurewebsites.net`
 
-1. Suba este repositório no GitHub (pode ser privado).
-2. No [Render](https://dashboard.render.com): **New → Blueprint** → conecte o GitHub e escolha o
-   repositório → **Apply**.
-3. Espere o primeiro deploy: o build com o Gradle leva alguns minutos, e a subida, 1 a 2 minutos no
-   plano grátis. Fica pronto quando `https://<sua-api>.onrender.com/actuator/health` responder
-   `{"status":"UP"}`.
-4. Copie a URL do serviço (algo como `https://antidoto-api.onrender.com`; se o nome já existir, o
-   Render acrescenta um sufixo).
+### Páginas
+| Rota | Descrição |
+|---|---|
+| `/` | Página inicial |
+| `/swagger-ui.html` | Documentação interativa (Swagger) |
+| `/actuator/health` | Saúde da API e do banco |
 
-Na criação, o Render pede o valor da `GROQ_API_KEY` (a chave da IA, que não vai para o Git). Se
-deixar em branco, a API funciona com o resumo do modelo padrão.
+### Autenticação e usuário
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/auth/cadastro` | Cria um cidadão e já devolve o token |
+| POST | `/api/auth/login` | Login, devolve o token JWT |
+| GET | `/api/usuarios/me` | Dados de quem está logado |
+| PUT | `/api/usuarios/me` | Altera o nome e o telefone |
+| PUT | `/api/usuarios/me/senha` | Troca a senha conferindo a atual |
 
-O Render gera o `JWT_SECRET` sozinho e entrega o banco em `DATABASE_URL`
-(`postgresql://usuario:senha@host/banco`); a API converte para JDBC na subida (`BancoDoRender`).
-Cada push na branch do serviço faz um deploy novo.
+### Unidades e primeiros socorros (públicas, o SOS funciona sem login)
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/unidades/proximas` | Unidades com soro compatível com o animal, da mais perto para a mais longe |
+| GET | `/api/unidades` | Unidades ativas, paginadas |
+| GET | `/api/unidades/{id}` | Detalhe de uma unidade |
+| GET | `/api/conteudo/primeiros-socorros/{tipoAnimal}` | O que fazer e o que não fazer para cada animal |
 
-**Blueprint criado antes do Passo 7?** O Render só pede a chave na criação: num Blueprint que já
-existe, ele ignora a `GROQ_API_KEY`. Abra o serviço → **Environment** → **Add Environment Variable**,
-crie `GROQ_API_KEY` com a chave e salve (o Render faz um deploy novo). As outras duas
-(`IA_HABILITADA` e `IA_MODELO`) chegam pelo próprio `render.yaml`.
+### Avistamentos (logado)
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/avistamentos` | Registra um avistamento |
+| GET | `/api/avistamentos/meus` | Avistamentos do usuário, paginados |
+| GET | `/api/avistamentos/{id}` | Busca um avistamento por ID |
+| PUT | `/api/avistamentos/{id}` | Atualiza um avistamento |
+| DELETE | `/api/avistamentos/{id}` | Remove um avistamento |
 
-### Como está no ar hoje (criado à mão)
+### Ocorrências (logado)
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/ocorrencias` | Registra a picada, calcula a urgência e gera o resumo |
+| GET | `/api/ocorrencias/minhas` | Histórico do usuário, paginado |
+| GET | `/api/ocorrencias/{id}` | Busca uma ocorrência por ID |
+| PUT | `/api/ocorrencias/{id}` | Atualiza a triagem e refaz o resumo |
+| DELETE | `/api/ocorrencias/{id}` | Remove uma ocorrência |
 
-A API no ar foi criada sem o Blueprint, com o mesmo resultado:
-
-1. **New → Postgres** (Free, Virginia) e copiar a **Internal Database URL**.
-2. **New → Web Service** → o repositório → Language **Docker**, a **mesma região** do banco, Free.
-   Variáveis: `DATABASE_URL` (a URL interna inteira), `JWT_SECRET` (base64 de 32 bytes),
-   `CORS_ORIGENS`, `CARREGAR_DADOS_INICIAIS`, `GROQ_API_KEY`, `IA_HABILITADA=true` e `IA_MODELO`.
-   Em Advanced, **Health Check Path** `/actuator/health`.
-
-**Repositório na organização:** o Render só enxerga um repositório de organização se o app dele no
-GitHub estiver instalado nela (um dono da organização aprova). Enquanto isso, o serviço usa um
-**fork pessoal**: cada mudança entra por PR na organização e depois o fork é sincronizado
-(**Sync fork**, ou um PR da organização para o fork); o Render faz o deploy sozinho a cada commit
-no fork.
-
-### Para a API não dormir
-
-No plano grátis, a API dorme depois de 15 minutos sem receber requisições e leva cerca de 1 minuto
-para acordar, mas o app desiste em 10 segundos ("Sem conexão"). Crie um monitor grátis no
-[UptimeRobot](https://uptimerobot.com) (tipo HTTP(s), URL `https://<sua-api>.onrender.com/actuator/health`,
-a cada 5 minutos): ele mantém a API acordada.
-
-As 750 horas grátis por mês são da conta inteira do Render. Um serviço acordado o mês todo usa cerca
-de 744 h: se outro serviço grátis da mesma conta também ficar acordado, as horas acabam e o Render
-suspende os serviços grátis até o mês seguinte.
-
-### Limites do plano grátis
-
-- **Postgres:** 1 por conta, 1 GB, e **expira 30 dias depois de criado** (mais 14 dias para fazer
-  upgrade antes de ser apagado). Se a conta já tiver um Postgres grátis, o Blueprint falha.
-- **API:** 512 MB e 0,1 de CPU. O Dockerfile já ajusta a JVM (heap em 60%, coletor simples, JIT leve):
-  aqui ela ficou em ~340 MB, já com o Spring AI.
-
-### App apontando para a nuvem
-
-No `.env` do app: `EXPO_PUBLIC_API_URL=https://<sua-api>.onrender.com` e `npx expo start --clear`.
-Login de teste: `cidadao@sospeconha.dev` / `Teste@123`.
+**Usuários de teste (fictícios):** `cidadao@sospeconha.dev` e `gestor@sospeconha.dev`, os dois com a senha `Teste@123`. No Swagger, faça o login, copie o `token` e cole em **Authorize**.
 
 ---
 
-## ⚙️ Variáveis de ambiente
+## 🗄️ Banco de dados
 
-Modelo em [`.env.example`](.env.example). Nenhuma é obrigatória no computador.
+As tabelas são criadas pelo Flyway (`src/main/resources/db/migration/V1__criar_tabelas.sql`) na primeira subida da API: `usuarios`, `unidades_saude`, `unidade_soros`, `ocorrencias`, `ocorrencia_sintomas` e `avistamentos`.
 
-| Variável                           | Para quê                                                  |
-| ---------------------------------- | --------------------------------------------------------- |
-| `PORT`                             | Porta (o Render define sozinho). Padrão: 8080             |
-| `DATABASE_URL`                     | Postgres no formato `postgresql://usuario:senha@host/banco` (o Render preenche pelo `render.yaml`). Sem ele e sem `DB_URL`, H2 em memória |
-| `DB_URL`, `DB_USUARIO`, `DB_SENHA` | Postgres configurado à mão (JDBC). Tem prioridade sobre o `DATABASE_URL` |
-| `JWT_SECRET`                       | Segredo do JWT em base64, 32+ bytes (`openssl rand -base64 32`). Sem ele, um aleatório por subida: o login cai quando a API reinicia |
-| `CORS_ORIGENS`                     | Origens do navegador, separadas por vírgula. Padrão: `http://localhost:8081` (Expo Web). O app no celular não usa CORS |
-| `CARREGAR_DADOS_INICIAIS`          | `false` desliga os usuários de teste. Padrão: `true`       |
-| `IA_HABILITADA`                    | `true` liga o resumo com IA. Padrão: `false` (só o modelo padrão) |
-| `GROQ_API_KEY`                     | Chave do Groq (`gsk_...`). Só na API, nunca no Git nem no app |
-| `IA_MODELO`                        | Modelo do Groq. Padrão: `openai/gpt-oss-120b`             |
-| `IA_URL`                           | Endereço da API compatível com a OpenAI. Padrão: `https://api.groq.com/openai/v1` |
+Para conferir os dados direto no PostgreSQL do container:
 
----
-
-## 📂 Estrutura
-
-```
-src/main/java/br/com/fiap/antidoto/
-├── config/       RelogioConfig (Clock das regras de tempo), OpenApiConfig (Swagger), AssincronoConfig (@Async), DadosIniciais (usuários, unidades e exemplos de teste), BancoDoRender (DATABASE_URL → JDBC)
-├── controller/   recebe, valida (@Valid) e chama o service
-├── dto/          records de request e response, com os nomes do contrato; PaginaResponse; erro/
-├── exception/    TratadorGlobalDeErros (formato de erro do contrato) e as exceções da API
-├── mapper/       entidade → DTO
-├── model/        entidades JPA e enums
-├── repository/   Spring Data JPA
-├── security/     SecurityConfig (rotas públicas e protegidas, CORS), JwtService, JwtFiltro, RespostasDeSeguranca (401/403)
-├── ia/           ResumoIaService (o resumo pelo Groq, com tempo limite e conferência da resposta) e ResumoModeloPadrao (o modelo de texto, a reserva)
-├── mensageria/   OcorrenciaCriadaEvento, OcorrenciaAtualizadaEvento e ResumoOcorrenciaConsumer (gera o resumo depois do commit, em segundo plano)
-└── service/      regras de negócio (AuthService, UsuarioService, UnidadeService, CompatibilidadeSoroService, DistanciaService, AvistamentoService, UrgenciaService, OcorrenciaService, ConteudoService)
-src/main/resources/
-├── application.properties
-└── db/migration/ V1__criar_tabelas.sql (Flyway, SQL do PostgreSQL)
-docs/             pacote do MVP (MVP-00, MVP-01) e o contrato
-render.yaml       Blueprint do Render (Postgres grátis + API)
-Dockerfile        imagem da API (build com o Gradle, roda só com a JRE)
+```bash
+az container exec --resource-group rg-antidoto-gs --name postgres-antidoto --exec-command "psql -U antidoto -d antidoto"
 ```
 
-As convenções estão no [`CLAUDE.md`](CLAUDE.md).
+### CRUD de avistamento com evidência no banco
+
+1. No Swagger, faça o login em `POST /api/auth/login` e cole o token em **Authorize**.
+2. **Inserir:** `POST /api/avistamentos`
+
+   ```json
+   {
+     "tipoAnimal": "ESCORPIAO",
+     "local": "QUINTAL",
+     "latitude": -23.5614,
+     "longitude": -46.6559,
+     "dataHora": "2026-11-16T15:30:00Z",
+     "observacao": "Escorpião amarelo perto do ralo"
+   }
+   ```
+
+   ```sql
+   SELECT id, tipo_animal, local_avist, observacao, criado_em, atualizado_em FROM avistamentos ORDER BY id;
+   ```
+3. **Atualizar:** `PUT /api/avistamentos/{id}` com o mesmo corpo e outra `observacao`, e o mesmo `SELECT` (o `atualizado_em` passa a ter valor).
+4. **Consultar:** `GET /api/avistamentos/{id}` e `GET /api/avistamentos/meus`.
+5. **Excluir:** `DELETE /api/avistamentos/{id}` (204) e o mesmo `SELECT`: a linha some.
 
 ---
 
-## Diferenças em relação ao MVP-01 (decididas em 10/11)
+## 🧪 Testando a esteira de ponta a ponta
 
-Como esta API não é a entrega de Java, ela segue o contrato à risca, mas simplifica o que o app
-não enxerga:
+1. Altere algo visível no código, por exemplo o título `<h1>` em `src/main/resources/static/index.html`.
+2. Faça commit e push na `main`.
+3. No Azure DevOps, o `Antidoto-CI` começa sozinho, roda os testes e publica o artefato.
+4. Em seguida, um novo Release começa sozinho e faz o deploy.
+5. Depois que o Release ficar verde, espere alguns minutos para o Java subir com o `.jar` novo e abra `https://antidoto-api-564063.azurewebsites.net`.
 
-| No MVP-01                              | Aqui                                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------------ |
-| Maven, Spring Boot 3.5                 | Gradle e Spring Boot 4, como no Java do Challenge (java-afetto)                |
-| Oracle em produção                     | PostgreSQL no Render (o Render não tem Oracle); o SQL do Flyway é de Postgres  |
-| RabbitMQ para o resumo                 | Resumo em segundo plano dentro da API (`@Async`), o modo sem fila do MVP-01    |
-| `br.com.sospeconha.api`, "SOS Peçonha" | `br.com.fiap.antidoto`, "Antídoto" (o nome do app)                             |
-| CRUD de unidades do GESTOR e `GET /api/ocorrencias/unidade/{id}` | Fora: o app não usa. As leituras públicas (`GET /api/unidades` e `/{id}`) existem |
-| Prompt do MVP-01 §8, `max-tokens 300`  | O mesmo prompt com regras a mais (copiar urgência, motivos e destino; alerta só com `(ALERTA)`; sem numeração), porque nos testes a IA chamou dor e inchaço de alerta e inventou motivo. Até 800 tokens, porque o `gpt-oss-120b` gasta tokens raciocinando. A conferência também descarta outro nível de urgência, alerta inventado e campo vazio |
-| Primeiros socorros só no app (MVP-02 §6) | `GET /api/conteudo/primeiros-socorros/{tipoAnimal}` (público), com o mesmo texto: o app mostra só dado que vem da API |
-| Sem troca de senha                     | `PUT /api/usuarios/me/senha`. "Esqueci a senha" ficou de fora: precisaria mandar e-mail, e o Render grátis bloqueia SMTP |
-| Ocorrência sem edição                  | `PUT /api/ocorrencias/{id}`: a pessoa atualiza a triagem (sintomas, unidade) e o resumo é refeito; a ocorrência ganha o CRUD completo |
-| Groq com `llama-3.3-70b-versatile`     | Groq com `openai/gpt-oss-120b`: o Groq desligou o Llama 3.3 70B nos planos grátis e developer em 16/08/2026 e indica este no lugar ([deprecations](https://console.groq.com/docs/deprecations)) |
+> Não use o título do Swagger para essa demonstração: um dos testes confere esse título, e o CI ficaria vermelho.
+
+---
+
+## 🔗 Links
+
+- 💻 Código-fonte: _link do repositório no GitHub_
+- 🔁 Projeto no Azure DevOps: _link do projeto_
+- 🌐 App no ar: https://antidoto-api-564063.azurewebsites.net
+- 🎥 Vídeo: _link do YouTube_
+
+---
+
+## 📱 Uso pelo app (Render)
+
+A mesma API também roda no Render, com um PostgreSQL próprio, para o app Antídoto consumir no dia a dia. Os arquivos desse deploy continuam no repositório ([`render.yaml`](render.yaml) e [`Dockerfile`](Dockerfile)), e o guia completo de uso pelo app (como rodar, usuários de teste, IA do resumo, variáveis e deploy no Render) está em [`docs/README-APP.md`](docs/README-APP.md).
 
 ---
 

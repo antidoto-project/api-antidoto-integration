@@ -22,7 +22,7 @@ import java.util.List;
 
 /**
  * Segurança (MVP-01 §5): stateless, JWT, CSRF desligado (não há cookie de sessão).
- * Públicas: cadastro, login, unidades (o SOS funciona sem login, RN-G1), saúde e Swagger.
+ * Públicas: cadastro, login, unidades (o SOS funciona sem login, RN-G1), saúde, Swagger e a página inicial.
  * O resto exige login. 401 e 403 saem no formato do contrato (RespostasDeSeguranca).
  */
 @Configuration
@@ -50,6 +50,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET,
                                 "/api/unidades", "/api/unidades/proximas", "/api/unidades/{id}",
                                 "/api/conteudo/primeiros-socorros/{tipoAnimal}").permitAll()
+                        // Página inicial (static/index.html): "/" encaminha para "/index.html"
+                        .requestMatchers(HttpMethod.GET, "/", "/index.html").permitAll()
                         .requestMatchers("/actuator/health", "/swagger-ui.html", "/swagger-ui/**",
                                 "/v3/api-docs/**", "/error").permitAll()
                         .anyRequest().authenticated())

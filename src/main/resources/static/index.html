@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Antídoto</title>
+
+  <!-- Página inicial da API (pública). Tudo num arquivo só: sem CSS, fonte ou script de fora. -->
+  <style>
+    :root {
+      --fundo: #0f1419;
+      --cartao: #1a2129;
+      --borda: #2a333d;
+      --texto: #eef1f4;
+      --suave: #9aa5b1;
+      --destaque: #e8533f;
+      --verde: #3cc48a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--fundo);
+      color: var(--texto);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--borda);
+    }
+
+    .header h2 { margin: 0; font-size: 20px; }
+
+    .header nav a {
+      color: var(--suave);
+      text-decoration: none;
+      margin-left: 18px;
+      font-size: 15px;
+    }
+
+    .header nav a:hover { color: var(--texto); }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+
+    .hero h1 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 6vw, 46px);
+      line-height: 1.1;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 640px;
+      color: var(--suave);
+      font-size: 18px;
+    }
+
+    .hero .alerta {
+      margin-top: 28px;
+      color: var(--texto);
+      padding: 14px 18px;
+      border-radius: 12px;
+      border: 1px solid var(--destaque);
+      background: rgba(232, 83, 63, 0.12);
+      font-weight: 600;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 36px;
+    }
+
+    .card {
+      display: block;
+      padding: 22px;
+      border-radius: 14px;
+      border: 1px solid var(--borda);
+      background: var(--cartao);
+      color: var(--texto);
+      text-decoration: none;
+    }
+
+    a.card:hover { border-color: var(--verde); }
+
+    .card h3 { margin: 0 0 8px; font-size: 18px; }
+
+    .card p { margin: 0; color: var(--suave); font-size: 15px; }
+
+    .rodape {
+      margin-top: 48px;
+      color: var(--suave);
+      font-size: 14px;
+    }
+  </style>
+
+</head>
+
+<body>
+
+<header class="header">
+
+  <h2>Antídoto</h2>
+
+  <nav>
+    <a href="/swagger-ui.html">Swagger</a>
+    <a href="/actuator/health">Saúde da API</a>
+  </nav>
+
+</header>
+
+
+<main class="container">
+
+  <section class="hero">
+
+    <!-- No vídeo da entrega, este é o título alterado para mostrar o CI/CD -->
+    <h1>Bem-vindo ao Antídoto</h1>
+
+    <p>
+      Orientação rápida em acidentes com animais peçonhentos: urgência,
+      primeiros socorros e as unidades de saúde mais próximas com soro compatível.
+    </p>
+
+    <p class="alerta">
+      Em caso de picada, procure atendimento médico imediatamente. Emergência: ligue 192 (SAMU).
+    </p>
+
+  </section>
+
+
+  <section class="cards">
+
+    <a href="/swagger-ui.html" class="card">
+      <h3>📘 Documentação da API</h3>
+      <p>Todas as rotas no Swagger, com login pelo botão Authorize.</p>
+    </a>
+
+    <a href="/api/unidades" class="card">
+      <h3>🏥 Unidades de saúde</h3>
+      <p>Lista pública das unidades e dos soros que cada uma tem.</p>
+    </a>
+
+    <a href="/actuator/health" class="card">
+      <h3>✅ Saúde da API</h3>
+      <p>Mostra se a API e o banco estão no ar.</p>
+    </a>
+
+  </section>
+
+  <p class="rodape">Antídoto · Global Solution 2026/2 · FIAP. Os dados de exemplo são fictícios.</p>
+
+</main>
+
+</body>
+</html>
